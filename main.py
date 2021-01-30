@@ -1,14 +1,117 @@
 #!/usr/bin/env python3
 
 from time import sleep
+from getkey import keys,getkey
+import threading
+from random import choice
 
+# Global variable
+key_queue = []
 
 class Block:
-	def __init__(self):
+	def __init__(self,x,y,color):
 		self.placed = False
-		self.x = -1	
-		self.y = -1
-		self.color = [91,102]
+		self.x = x	
+		self.y = y 
+		self.color = color
+
+
+class Block_Structur:
+	
+	types = {"I":[[1,1,1,1],[0,0,0,0],[0,0,0,0],[0,0,0,0]],
+			 "J":[[1,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]],
+			 "L":[[0,0,0,1],[1,1,1,1],[0,0,0,0],[0,0,0,0]],
+			 "O":[[1,1,0,0],[1,1,0,0],[0,0,0,0],[0,0,0,0]],
+			 "S":[[0,1,1,0],[1,1,0,0],[0,0,0,0],[0,0,0,0]],
+			 "T":[[0,1,0,0],[1,1,1,0],[0,0,0,0],[0,0,0,0]],
+			 "Z":[[1,1,0,0],[0,1,1,0],[0,0,0,0],[0,0,0,0]],
+			}
+	colors = {"I":91,"J":92,"L":93,"O":94,"S":95,"T":96,"Z":97}
+
+
+	def __init__(self,_type,display):
+		self.blocks = []	
+		self.start_pos = (2,0)		
+		self._type = _type
+		self.active = True
+		self.display = display
+		self.color = Block_Structur.colors[self._type]	
+		self.init_blocks()
+		
+
+	def init_blocks(self):
+		own_type = Block_Structur.types[self._type]	
+		for i,row in enumerate(own_type):
+			for j,col in enumerate(row):
+				if col == 1:
+					self.blocks.append(Block(self.start_pos[0]+j,self.start_pos[1]+i,self.color))			
+
+
+	def check_move(self,game_controller):
+		try:
+			#print("own blocks:")
+			#[print(i.x,i.y) for i in self.blocks]
+			# Game controller stores the object structs not individual blocks
+			global key_queue
+			if self.active:
+				if len(key_queue)>0:
+					#print("Key-queue",key_queue)
+					move = key_queue.pop(0)							
+					if move == "a":	
+						move_valid = True
+						for o in self.blocks:
+							if o.x-1 < 1: #hits left side wall
+								print("Move invalid")
+								move_valid = False # do nothing	
+							for struct in game_controller.all_structs:
+								for block in struct.blocks:
+									if o.x-1 == block.x and o.y == block.y:
+										move_valid = False	
+						if move_valid:
+							for i in self.blocks:
+								i.x -= 1
+						else:
+							print("This move is invalid, Sorry!")
+					elif move == "d":
+						print("Move registered as d")
+						move_valid = True
+						for o in self.blocks:
+							if o.x+1 > self.display.width-2: #hits right side wall
+								move_valid = False 
+								for struct in game_controller.all_structs:
+									for block in struct.blocks:
+										if o.x+1 == block.x and o.y == block.y:
+											move_valid = False	
+						if move_valid:
+							#print("Moving Block")
+							for i in self.blocks:
+								i.x += 1
+			else:
+				print("waisted resources on calling this thing...")
+		except Exception as e:
+			print("Exception in check_move:",e)
+			raise e
+
+
+	def move_down(self,game_controller):
+		hit_block = False
+		for block in self.blocks:
+			for struct in game_controller.all_structs:
+				for i in struct.blocks:
+					if block.y+1 == i.y and block.x == i.x:
+						hit_block = True
+						break
+			if block.y > game_controller.display.height-3:
+				hit_block = True 
+
+		if hit_block:
+			print("Falling Block is now dead!")
+			self.active = False
+			game_controller.all_structs.append(self)
+			return "New"
+		else:
+			for i in self.blocks:
+				i.y +=1
 
 class Display:
 	
@@ -26,8 +129,12 @@ class Display:
 		print("\x1b[?25l")
 						
 
-	def draw(self,blocks): # always print two 2 spaces, or 1 block (being two colored blocks)
-		block_char = "\033[{};{}m██\033[m"
+	def draw(self,structs): # always print two 2 spaces, or 1 block (being two colored blocks)
+		blocks = []
+		for i in structs:
+			for b in i.blocks:
+				blocks.append(b)
+		block_char = "\033[{}m██\033[m"
 		text = ""
 		for h in range(self.height):
 			for w in range(self.width):	
@@ -36,37 +143,72 @@ class Display:
 				else:
 					found_block = False
 					for b in blocks:
-						if b.x==w and b.y==h:
-							text += block_char.format(b.color[0],b.color[1])
+						if b.x == w and b.y == h:
+							text += block_char.format(b.color)
 							found_block = True	
 					if not found_block:
 						text += "  "
 			text+="\n"	
 		print(text)	
 
+class Game_Controller:
+	
+	def __init__(self,display):
+		self.log_thread = threading.Thread(target=self.queue_keys)	
+		self.main_thread = threading.Thread(target=self.game_control) 	
+		self.block_mover = threading.Thread(target=self.move_structs_down)
+		self.player_block_move = threading.Thread(target=self.check_block_move)		
+	
+		self.game_speed = .3  
+		self.all_structs = []		
+		self.active_struct = None
+		self.display = display	
+		self.generate_new_active()
+
+		self.log_thread.start()
+		self.main_thread.start()
+		self.block_mover.start()
+		self.player_block_move.start()			
+	
+	def move_structs_down(self):
+		# remember to add active struct to all structs when placed
+		while True:
+			resp = self.active_struct.move_down(self)
+			if resp == "New":
+				self.generate_new_active()	
+			sleep(self.game_speed)	
+
+
+	def generate_new_active(self):
+		opts = ["I","J","L","O","S","T","Z"]				
+		#new_struct = Block_Structur(choice(opts),self.display)
+		new_struct = Block_Structur("O",self.display) # <= Just for testing
+		self.active_struct = new_struct		
+
+
+	def game_control(self):
+		while True:
+			self.display.clear_screen()
+			structs = self.all_structs+[self.active_struct] 
+			self.display.draw(structs)	
+			sleep(self.game_speed)
+	
+	def check_block_move(self):
+		while True:
+			self.active_struct.check_move(self)
+			sleep(0.05)# This delay should be fairly low so the player gets direct move-feedback
+
+	def queue_keys(self):
+		global key_queue  
+		while True:
+			key_queue.append(getkey())
+
 def main():
 	
 	display = Display()
-	b = Block()
-	b.x = 2
-	b.y = 3
-
-	blocks = [b]
-	for i in range(20):
-		display.clear_screen()
-		display.draw(blocks)	
-		sleep(.3)
-		blocks[0].y+=1
 	
+	game_c = Game_Controller(display)
+
 if __name__ == "__main__":
 	main()
-
-
-
-
-
-
-
-
-
 
