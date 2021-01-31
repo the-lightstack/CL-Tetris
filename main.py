@@ -31,7 +31,7 @@ class Block_Structur:
 
 	def __init__(self,_type,display):
 		self.blocks = []	
-		self.start_pos = (3,3)		
+		self.start_pos = (2,1)		
 		self._type = _type
 		self.active = True
 		self.display = display
@@ -49,19 +49,15 @@ class Block_Structur:
 
 	def check_move(self,game_controller):
 		try:
-			#print("own blocks:")
-			#[print(i.x,i.y) for i in self.blocks]
 			# Game controller stores the object structs not individual blocks
 			global key_queue
 			if self.active:
 				if len(key_queue)>0:
-					#print("Key-queue",key_queue)
 					move = key_queue.pop(0)							
 					if move == "a":	
 						move_valid = True
 						for o in self.blocks:
 							if o.x-1 < 1: #hits left side wall
-								print("Move invalid")
 								move_valid = False # do nothing	
 							for struct in game_controller.all_structs:
 								for block in struct.blocks:
@@ -71,10 +67,7 @@ class Block_Structur:
 							for i in self.blocks:
 								i.x -= 1
 							self.position[0] -= 1
-						else:
-							print("This move is invalid, Sorry!")
 					elif move == "d":
-						print("Move registered as d")
 						move_valid = True
 						for o in self.blocks:
 							if o.x+1 > self.display.width-2: #hits right side wall
@@ -84,7 +77,6 @@ class Block_Structur:
 										if o.x+1 == block.x and o.y == block.y:
 											move_valid = False	
 						if move_valid:
-							#print("Moving Block")
 							for i in self.blocks:
 								i.x += 1
 							self.position[0] += 1
@@ -96,8 +88,6 @@ class Block_Structur:
 							if self.move_down(game_controller) == "New":
 								game_controller.generate_new_active()	
 								break
-			else:
-				print("waisted resources on calling this thing...")
 		
 		except Exception as e:
 			print("Exception in check_move:",e)
@@ -144,7 +134,6 @@ class Block_Structur:
 				hit_block = True 
 
 		if hit_block:
-			print("Falling Block is now dead!")
 			self.active = False
 			game_controller.all_structs.append(self)
 			return "New"
@@ -152,6 +141,7 @@ class Block_Structur:
 			for i in self.blocks:
 				i.y +=1
 			self.position[1] += 1
+
 
 class Display:
 	
@@ -223,17 +213,19 @@ class Game_Controller:
 
 	def generate_new_active(self):
 		opts = ["I","J","L","O","S","T","Z"]				
-		#new_struct = Block_Structur(choice(opts),self.display)
-		new_struct = Block_Structur("O",self.display) # <= Just for testing
+		new_struct = Block_Structur(choice(opts),self.display)
+		#new_struct = Block_Structur("O",self.display) # <= Just for testing
 		self.active_struct = new_struct		
 
 	def clear_row(self,cleared_row_num):
+
 		for s in self.all_structs:
 			for b in s.blocks:
 				if b.y == cleared_row_num:
 					s.blocks.remove(b)	
 				elif b.y < cleared_row_num:
-					b.y +=1
+					# This should be +=
+					b.y += 1
 
 	def check_clear_row(self):
 		while True:	
@@ -243,14 +235,14 @@ class Game_Controller:
 					for block in s.blocks:
 						if block.y == i:
 							counter += 1	
+
 				if counter == self.display.width-2:
-					print("Cleared row ",i)
 					self.clear_row(i)
 			sleep(0.2)
 
 	def game_control(self):
 		while True:
-			#self.display.clear_screen()
+			self.display.clear_screen()
 			structs = self.all_structs+[self.active_struct] 
 			self.display.draw(structs)	
 			sleep(self.game_speed)
